@@ -1,8 +1,146 @@
-// Content script that runs on all pages
+extractWords(text) {
+    return text
+      .toLowerCase()
+      .replace(/[^\w\s-]/g, ' ')
+      .split(/\s+/)
+      .filter(word => word.length > 2 && !this.stopWords.has(word));
+  }
+
+  calculateWordFrequency(words) {
+    const freq = new Map();
+    words.forEach(word => {
+      freq.set(word, (freq.get(word) || 0) + 1);
+    });
+    return freq;
+  }
+
+  // Enhanced methods for better keyword extraction
+  extractKeyphrases(text) {
+    const phrases = [];
+    
+    // Look for capitalized phrases (potential proper nouns)
+    const capitalizedPhrases = text.match(/[A-Z][a-zA-Z]*(?:\s+[A-Z][a-zA-Z]*){1,3}/g) || [];
+    phrases.push(...capitalizedPhrases);
+    
+    // Look for technical terms with dots, hyphens, or camelCase
+    const technicalTerms = text.match(/[a-zA-Z]+[.-][a-zA-Z]+(?:[.-][a-zA-Z]+)*/g) || [];
+    phrases.push(...technicalTerms);
+    
+    // Look for quoted terms
+    const quotedTerms = text.match(/"([^"]{3,30})"/g) || [];
+    phrases.push(...quotedTerms.map(q => q.replace(/"/g, '')));
+    
+    // Look for terms in code blocks or backticks
+    const codeTerms = text.match(/`([^`]{3,30})`/g) || [];
+    phrases.push(...codeTerms.map(c => c.replace(/`/g, '')));
+    
+    // Look for terms in parentheses
+    const parenthesisTerms = text.match(/\(([^)]{3,30})\)/g) || [];
+    phrases.push(...parenthesisTerms.map(p => p.replace(/[()]/g, '')));
+    
+    return [...new Set(phrases)]
+      .filter(phrase => this.isValidKeyword(phrase))
+      .slice(0, 30);
+  }
+
+  extractNamedEntities(text) {
+    const entities = [];
+    
+    // Look for potential company names (capitalized words with business suffixes)
+    const companyPatterns = [
+      /\b[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*\s+(?:Inc|Corp|LLC|Ltd|Co|Company|Technologies|Tech|Systems|Software|Solutions|Labs|Group|Enterprises)\b/gi,
+      /\b[A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*\s+(?:API|SDK|CRM|ERP|SaaS|AI|ML|Platform|Service|Services)\b/gi
+    ];
+    
+    companyPatterns.forEach(pattern => {
+      const matches = text.match(pattern) || [];
+      entities.push(...matches);
+    });
+    
+    // Look for URLs and extract domain names
+    const urls = text.match(/https?:\/\/(?:www\.)?([a-zA-Z0-9-]+\.[a-zA-Z]{2,})/gi) || [];
+    urls.forEach(url => {
+      const domain = url.match(/https?:\/\/(?:www\.)?([a-zA-Z0-9-]+)\./i);
+      if (domain && domain[1] && domain[1].length > 2) {
+        entities.push(domain[1]);
+      }
+    });
+    
+    // Look for @mentions and #hashtags
+    const mentions = text.match(/@([a-zA-Z0-9_]{3,15})/g) || [];
+    entities.push(...mentions.map(m => m.substring(1)));
+    
+    const hashtags = text.match(/#([a-zA-Z0-9_]{3,20})/g) || [];
+    entities.push(...hashtags.map(h => h.substring(1)));
+    
+    return [...new Set(entities)]
+      .filter(entity => this.isValidKeyword(entity))
+      .slice(0, 25);
+  }
+
+  getWordImportance(word) {
+    const lowerWord = word.toLowerCase();
+    
+    // Higher importance for seed keywords
+    if (this.seedKeywords.has(lowerWord)) return 4;
+    
+    // Higher importance for capitalized words
+    if (word[0] === word[0].toUpperCase()) return 3;
+    
+    // Higher importance for technical-looking terms
+    if (/[A-Z]/.test(word) || /[.\-_]/.test(word)) return 2.5;
+    
+    // Higher importance for longer words (brands/products tend to be longer)
+    if (word.length >= 6) return 2;
+    
+    return 1;
+  }
+
+  categorizeKeyword(keyword) {
+    const lower = keyword.toLowerCase();
+    
+    // Tech terms
+    if (/(?:js|css|html|api|sdk|sql|json|xml|http|tcp|udp|rest|graphql|oauth|jwt|cdn|dns|ssl|tls|vpn|aws|gcp|azure)/.test(lower) ||
+        /(?:javascript|python|java|react|angular|vue|node|docker|kubernetes|mongodb|postgresql|mysql|redis|nginx|apache)/.test(lower)) {
+      return 'tech';
+    }
+    
+    // Business terms
+    if (/(?:saas|crm|erp|kpi|roi|seo|sem|ppc|ctr|b2b|b2c|startup|unicorn|ipo|vc|ceo|cto|cfo)/.test(lower)) {
+      return 'business';
+    }
+    
+    // Brands/Companies (check if it has company indicators)
+    if (/(?:inc|corp|llc|ltd|company|technologies|tech|systems|software|solutions|labs|group)/.test(lower) ||
+        this.seedKeywords.has(lower)) {
+      return 'brand';
+    }
+    
+    return 'keyword';
+  }
+
+  // Add debugging method
+  getKeywordStats() {
+    const stats = {
+      dynamicKeywords: this.dynamicKeywords.size,
+      topKeywords: Array.from(this.dynamicKeywords.entries())
+        .sort(([,a], [,b]) => b.score - a.score)
+        .slice(0, 10)
+        .map(([key, data]) => ({
+          keyword: data.text,
+          score: data.score,
+          frequency: data.frequency,
+          sources: Array.from(data.sources)
+        }))
+    };
+    
+    return stats;
+  }// Content script that runs on all pages
 class SmartLinkCreator {
   constructor() {
     this.isEnabled = true;
     this.processedElements = new Set();
+    this.dynamicKeywords = new Map(); // Runtime keyword collection
     this.stopWords = new Set([
       'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from', 'has', 'he', 'in', 'is', 'it', 
       'its', 'of', 'on', 'that', 'the', 'to', 'was', 'will', 'with', 'would', 'you', 'your', 'this', 
@@ -12,28 +150,32 @@ class SmartLinkCreator {
       'two', 'more', 'very', 'when', 'come', 'may', 'get', 'use', 'man', 'new', 'now', 'old', 'see',
       'way', 'who', 'boy', 'did', 'number', 'no', 'could', 'people', 'my', 'than', 'first', 'been',
       'call', 'work', 'made', 'after', 'back', 'other', 'good', 'go', 'write', 'where', 'much', 'take',
-      'why', 'help', 'put', 'end', 'try', 'ask', 'turn', 'move', 'live', 'year', 'place', 'over'
+      'why', 'help', 'put', 'end', 'try', 'ask', 'turn', 'move', 'live', 'year', 'place', 'over', 'just',
+      'think', 'also', 'through', 'only', 'before', 'here', 'right', 'should', 'those', 'well', 'being',
+      'same', 'never', 'most', 'must', 'might', 'going', 'still', 'another', 'does', 'without', 'every',
+      'something', 'look', 'find', 'too', 'between', 'both', 'long', 'used', 'while', 'part', 'even'
     ]);
     
-    // Known entities that should always be linked
-    this.knownEntities = new Set([
-      'google', 'microsoft', 'apple', 'amazon', 'facebook', 'meta', 'netflix', 'tesla', 'spotify', 
-      'adobe', 'salesforce', 'oracle', 'ibm', 'intel', 'amd', 'nvidia', 'samsung', 'react', 'vue',
-      'angular', 'javascript', 'python', 'java', 'nodejs', 'docker', 'kubernetes', 'api', 'mysql',
-      'postgresql', 'mongodb', 'redis', 'aws', 'azure', 'gcp', 'github', 'gitlab', 'slack', 'zoom',
-      'figma', 'notion', 'trello', 'asana', 'shopify', 'wordpress', 'stripe', 'paypal'
+    // Base seed keywords to supplement dynamic detection
+    this.seedKeywords = new Set([
+      'api', 'sdk', 'saas', 'ai', 'ml', 'ux', 'ui', 'ceo', 'cto', 'startup', 'platform', 'framework',
+      'database', 'server', 'cloud', 'mobile', 'web', 'app', 'software', 'technology', 'digital'
     ]);
 
     this.init();
   }
 
+  // Initialize with message handling and runtime updates
   init() {
     // Load settings
     chrome.storage.sync.get(['smartLinkEnabled'], (result) => {
       this.isEnabled = result.smartLinkEnabled !== false; // Default to true
       if (this.isEnabled) {
-        this.processPage();
-        this.observeChanges();
+        // Add small delay to ensure DOM is fully loaded
+        setTimeout(() => {
+          this.processPage();
+          this.observeChanges();
+        }, 500);
       }
     });
 
@@ -48,14 +190,123 @@ class SmartLinkCreator {
         }
       }
     });
+
+    // Listen for messages from popup
+    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+      if (request.action === 'getStats') {
+        sendResponse(this.getCurrentStats());
+      } else if (request.action === 'toggleSmartLinks') {
+        this.isEnabled = request.enabled;
+        if (this.isEnabled) {
+          this.processPage();
+        } else {
+          this.removeAllLinks();
+        }
+      } else if (request.action === 'getKeywordDebug') {
+        sendResponse(this.getKeywordStats());
+      }
+      return true;
+    });
+  }
+
+  getCurrentStats() {
+    const brandCount = document.querySelectorAll('.smart-link-brand').length;
+    const techCount = document.querySelectorAll('.smart-link-tech').length;
+    const businessCount = document.querySelectorAll('.smart-link-business').length;
+    const highCount = document.querySelectorAll('.smart-link-high').length;
+    const mediumCount = document.querySelectorAll('.smart-link-medium').length;
+    
+    return {
+      brandCount,
+      techCount,
+      businessCount,
+      keywordCount: highCount + mediumCount,
+      totalCount: brandCount + techCount + businessCount + highCount + mediumCount,
+      dynamicKeywordsFound: this.dynamicKeywords.size
+    };
+  }
+
+  observeChanges() {
+    // Watch for dynamic content changes with improved debouncing
+    let reprocessTimeout;
+    const observer = new MutationObserver((mutations) => {
+      let shouldReprocess = false;
+      
+      mutations.forEach((mutation) => {
+        mutation.addedNodes.forEach((node) => {
+          if (node.nodeType === Node.ELEMENT_NODE && 
+              !node.classList.contains('smart-link-wrapper') &&
+              node.textContent && node.textContent.trim().length > 10) {
+            shouldReprocess = true;
+          }
+        });
+      });
+      
+      if (shouldReprocess) {
+        // Debounce reprocessing to avoid excessive calls
+        clearTimeout(reprocessTimeout);
+        reprocessTimeout = setTimeout(() => {
+          console.log('🔄 Reprocessing page due to content changes...');
+          this.processPage();
+        }, 2000);
+      }
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+
+    this.mutationObserver = observer;
+  }
+
+  removeAllLinks() {
+    const smartLinks = document.querySelectorAll('.smart-link-wrapper');
+    smartLinks.forEach(link => {
+      const textNode = document.createTextNode(link.textContent);
+      link.parentNode.replaceChild(textNode, link);
+    });
+    this.processedElements.clear();
+    this.dynamicKeywords.clear();
+    
+    // Stop observing changes
+    if (this.mutationObserver) {
+      this.mutationObserver.disconnect();
+    }
+  }
+
+  // Enhanced method to send analytics updates
+  trackKeywordClick(keyword, type, score) {
+    // Send analytics to background script or extension popup
+    try {
+      chrome.runtime.sendMessage({
+        action: 'keywordClicked',
+        keyword: keyword,
+        type: type,
+        score: score,
+        url: window.location.href,
+        timestamp: Date.now(),
+        dynamicKeyword: this.dynamicKeywords.has(keyword.toLowerCase())
+      });
+    } catch (e) {
+      // Ignore if extension context is not available
+      console.log('Analytics tracking unavailable');
+    }
   }
 
   processPage() {
-    // First, extract and analyze the full content
-    const fullContent = this.extractPageContent();
-    const keywords = this.analyzeContent(fullContent);
+    console.log('🔍 Starting dynamic content analysis...');
     
-    // Process text content in common content areas
+    // Step 1: Build dynamic keyword library from page content
+    this.buildDynamicKeywordLibrary();
+    
+    // Step 2: Extract and analyze the full content  
+    const fullContent = this.extractPageContent();
+    const keywords = this.analyzeContentWithDynamicKeywords(fullContent);
+    
+    console.log(`📊 Found ${keywords.length} keywords to link:`, keywords.slice(0, 10));
+    
+    // Step 3: Process text content in common content areas
     const selectors = [
       'article', 'main', '.content', '.post', '.article', 
       'p', 'div', 'span', 'li', 'td', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'
@@ -65,6 +316,291 @@ class SmartLinkCreator {
       const elements = document.querySelectorAll(selector);
       elements.forEach(element => this.processElement(element, keywords));
     });
+    
+    console.log(`✅ Processing complete. Dynamic keywords discovered:`, Array.from(this.dynamicKeywords.keys()).slice(0, 20));
+  }
+
+  buildDynamicKeywordLibrary() {
+    console.log('🏗️ Building dynamic keyword library...');
+    this.dynamicKeywords.clear();
+    
+    // Analyze different content sources with different weights
+    const sources = [
+      { elements: 'title', weight: 10, type: 'title' },
+      { elements: 'h1', weight: 8, type: 'heading' },
+      { elements: 'h2, h3', weight: 6, type: 'heading' },
+      { elements: 'h4, h5, h6', weight: 4, type: 'heading' },
+      { elements: 'img', weight: 5, type: 'image', attr: ['alt', 'title', 'src'] },
+      { elements: 'figcaption, .caption, .image-caption', weight: 5, type: 'caption' },
+      { elements: 'strong, b, em, mark', weight: 3, type: 'emphasis' },
+      { elements: 'a', weight: 3, type: 'link', attr: ['title', 'href'] },
+      { elements: '.brand, .company, .product', weight: 7, type: 'branded' },
+      { elements: 'meta[name="keywords"]', weight: 6, type: 'meta', attr: ['content'] },
+      { elements: 'meta[name="description"]', weight: 4, type: 'meta', attr: ['content'] },
+      { elements: 'article, main, .content', weight: 1, type: 'content' }
+    ];
+
+    sources.forEach(source => {
+      this.extractKeywordsFromSource(source);
+    });
+
+    // Analyze sentence beginnings for important terms
+    this.analyzeSentenceBeginnings();
+    
+    // Filter and score the collected keywords
+    this.scoreAndFilterKeywords();
+  }
+
+  extractKeywordsFromSource(source) {
+    const elements = source.elements === 'title' ? 
+      [document] : document.querySelectorAll(source.elements);
+    
+    Array.from(elements).forEach(element => {
+      let texts = [];
+      
+      if (source.elements === 'title') {
+        texts.push(document.title || '');
+      } else if (source.attr) {
+        // Extract from attributes
+        source.attr.forEach(attr => {
+          const value = element.getAttribute(attr);
+          if (value) texts.push(value);
+        });
+        // Also get text content
+        texts.push(element.textContent || '');
+      } else {
+        texts.push(element.textContent || '');
+      }
+      
+      texts.forEach(text => {
+        if (text && text.trim()) {
+          this.extractAndWeightKeywords(text, source.weight, source.type);
+        }
+      });
+    });
+  }
+
+  extractAndWeightKeywords(text, weight, sourceType) {
+    // Extract different types of potential keywords
+    const candidates = new Set();
+    
+    // 1. Capitalized words and phrases
+    const capitalizedWords = text.match(/\b[A-Z][a-zA-Z]{2,}(?:\s+[A-Z][a-zA-Z]{2,})*\b/g) || [];
+    capitalizedWords.forEach(word => candidates.add(word));
+    
+    // 2. Words with special characters (technical terms)
+    const technicalTerms = text.match(/\b[a-zA-Z]+[._-][a-zA-Z]+(?:[._-][a-zA-Z]+)*\b/g) || [];
+    technicalTerms.forEach(term => candidates.add(term));
+    
+    // 3. Quoted terms
+    const quotedTerms = text.match(/"([^"]{3,30})"/g) || [];
+    quotedTerms.forEach(quoted => candidates.add(quoted.replace(/"/g, '')));
+    
+    // 4. Terms in parentheses (often abbreviations or brands)
+    const parenthesisTerms = text.match(/\(([A-Z]{2,}|[A-Z][a-zA-Z]{2,})\)/g) || [];
+    parenthesisTerms.forEach(term => candidates.add(term.replace(/[()]/g, '')));
+    
+    // 5. All words for frequency analysis (filtered)
+    const allWords = text.toLowerCase().match(/\b[a-zA-Z]{3,}\b/g) || [];
+    allWords.forEach(word => {
+      if (!this.stopWords.has(word) && this.isValidKeyword(word)) {
+        candidates.add(word);
+      }
+    });
+    
+    // 6. Domain names from URLs
+    const domains = text.match(/(?:https?:\/\/)?(?:www\.)?([a-zA-Z0-9-]+\.[a-zA-Z]{2,})/g) || [];
+    domains.forEach(domain => {
+      const cleanDomain = domain.replace(/https?:\/\//, '').replace(/www\./, '').split('.')[0];
+      if (cleanDomain.length > 2) candidates.add(cleanDomain);
+    });
+    
+    // Add to dynamic keywords with weighted scores
+    candidates.forEach(candidate => {
+      if (this.isValidKeyword(candidate)) {
+        const key = candidate.toLowerCase();
+        const existing = this.dynamicKeywords.get(key) || { text: candidate, score: 0, sources: new Set(), frequency: 0 };
+        existing.score += weight;
+        existing.frequency += 1;
+        existing.sources.add(sourceType);
+        this.dynamicKeywords.set(key, existing);
+      }
+    });
+  }
+
+  analyzeSentenceBeginnings() {
+    // Find sentences and analyze their beginnings for important terms
+    const contentElements = document.querySelectorAll('p, div, li, article, main');
+    
+    Array.from(contentElements).forEach(element => {
+      const text = element.textContent || '';
+      const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 10);
+      
+      sentences.forEach(sentence => {
+        const trimmed = sentence.trim();
+        // Look for capitalized words at sentence beginnings (excluding common sentence starters)
+        const beginningWords = trimmed.match(/^([A-Z][a-zA-Z]{2,}(?:\s+[A-Z][a-zA-Z]{2,})*)/);
+        
+        if (beginningWords && beginningWords[1]) {
+          const words = beginningWords[1].split(/\s+/);
+          words.forEach(word => {
+            if (word.length > 2 && !this.stopWords.has(word.toLowerCase()) && 
+                !['The', 'This', 'That', 'These', 'Those', 'When', 'Where', 'What', 'How', 'Why', 'Who'].includes(word)) {
+              
+              const key = word.toLowerCase();
+              const existing = this.dynamicKeywords.get(key) || { text: word, score: 0, sources: new Set(), frequency: 0 };
+              existing.score += 2; // Sentence beginnings get moderate weight
+              existing.frequency += 1;
+              existing.sources.add('sentence-start');
+              this.dynamicKeywords.set(key, existing);
+            }
+          });
+        }
+      });
+    });
+  }
+
+  scoreAndFilterKeywords() {
+    // Additional scoring based on patterns and characteristics
+    for (const [key, data] of this.dynamicKeywords.entries()) {
+      let bonusScore = 0;
+      
+      // Brand-like patterns
+      if (/^[A-Z][a-zA-Z]*$/.test(data.text)) bonusScore += 2;
+      if (data.text.length >= 6 && data.text.length <= 15) bonusScore += 1;
+      if (/[A-Z]{2,}/.test(data.text)) bonusScore += 2; // Acronyms
+      if (data.text.includes('.') || data.text.includes('-')) bonusScore += 2; // Technical terms
+      
+      // Multiple source bonus
+      if (data.sources.size > 1) bonusScore += data.sources.size;
+      
+      // High frequency bonus
+      if (data.frequency >= 3) bonusScore += Math.min(data.frequency, 10);
+      
+      // Seed keyword bonus
+      if (this.seedKeywords.has(key)) bonusScore += 5;
+      
+      data.score += bonusScore;
+    }
+    
+    // Remove low-scoring keywords
+    for (const [key, data] of this.dynamicKeywords.entries()) {
+      if (data.score < 2) {
+        this.dynamicKeywords.delete(key);
+      }
+    }
+  }
+
+  analyzeContentWithDynamicKeywords(content) {
+    // Combine dynamic keywords with traditional analysis
+    const staticKeywords = this.traditionalContentAnalysis(content);
+    const dynamicKeywords = Array.from(this.dynamicKeywords.values());
+    
+    // Merge and deduplicate
+    const allKeywords = new Map();
+    
+    // Add dynamic keywords (higher priority)
+    dynamicKeywords.forEach(keyword => {
+      const key = keyword.text.toLowerCase();
+      allKeywords.set(key, {
+        text: keyword.text,
+        score: keyword.score + 5, // Boost dynamic keywords
+        type: this.categorizeDynamicKeyword(keyword),
+        sources: keyword.sources,
+        frequency: keyword.frequency
+      });
+    });
+    
+    // Add static keywords (lower priority, merge if exists)
+    staticKeywords.forEach(keyword => {
+      const key = keyword.text.toLowerCase();
+      const existing = allKeywords.get(key);
+      if (existing) {
+        existing.score += keyword.score;
+      } else {
+        allKeywords.set(key, keyword);
+      }
+    });
+    
+    // Return top keywords sorted by score, limited to prevent overwhelming
+    return Array.from(allKeywords.values())
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 80) // Increased limit for more coverage
+      .filter(k => k.score >= 3); // Minimum threshold
+  }
+
+  traditionalContentAnalysis(content) {
+    const words = this.extractWords(content);
+    const wordFreq = this.calculateWordFrequency(words);
+    const keyphrases = this.extractKeyphrases(content);
+    const namedEntities = this.extractNamedEntities(content);
+    
+    const keywords = new Map();
+    
+    // Add word frequencies (single words)
+    for (const [word, freq] of wordFreq) {
+      if (this.isValidKeyword(word) && freq >= 2) {
+        keywords.set(word.toLowerCase(), {
+          text: word,
+          score: freq * this.getWordImportance(word),
+          type: this.categorizeKeyword(word)
+        });
+      }
+    }
+    
+    // Add keyphrases with higher scores
+    for (const phrase of keyphrases) {
+      const key = phrase.toLowerCase();
+      const score = (keywords.get(key)?.score || 0) + 5;
+      keywords.set(key, {
+        text: phrase,
+        score: score,
+        type: this.categorizeKeyword(phrase)
+      });
+    }
+    
+    // Add named entities with highest scores
+    for (const entity of namedEntities) {
+      const key = entity.toLowerCase();
+      const score = (keywords.get(key)?.score || 0) + 10;
+      keywords.set(key, {
+        text: entity,
+        score: score,
+        type: 'entity'
+      });
+    }
+    
+    return Array.from(keywords.values());
+  }
+
+  categorizeDynamicKeyword(keyword) {
+    const text = keyword.text.toLowerCase();
+    const sources = Array.from(keyword.sources);
+    
+    // Brand/Entity detection
+    if (sources.includes('title') || sources.includes('heading') || 
+        sources.includes('branded') || keyword.frequency >= 5) {
+      return 'brand';
+    }
+    
+    // Technical terms
+    if (text.includes('.') || text.includes('-') || text.includes('_') ||
+        /(?:api|sdk|js|css|html|json|xml|sql|http|tcp|ssl|cdn|dns)/.test(text)) {
+      return 'tech';
+    }
+    
+    // Business terms
+    if (/(?:saas|crm|erp|roi|seo|b2b|startup|platform|service)/.test(text)) {
+      return 'business';
+    }
+    
+    // High importance if multiple sources or high frequency
+    if (sources.length >= 3 || keyword.frequency >= 4) {
+      return 'high';
+    }
+    
+    // Medium importance for everything else
+    return 'medium';
   }
 
   extractPageContent() {
@@ -96,68 +632,18 @@ class SmartLinkCreator {
     return `${title} ${title} ${headings} ${headings} ${content}`;
   }
 
-  analyzeContent(content) {
-    const words = this.extractWords(content);
-    const wordFreq = this.calculateWordFrequency(words);
-    const keyphrases = this.extractKeyphrases(content);
-    const namedEntities = this.extractNamedEntities(content);
+  isValidKeyword(word) {
+    if (typeof word !== 'string') return false;
     
-    // Combine and score all potential keywords
-    const allKeywords = new Map();
+    const cleanWord = word.trim();
     
-    // Add word frequencies (single words)
-    for (const [word, freq] of wordFreq) {
-      if (this.isValidKeyword(word) && freq >= 2) {
-        allKeywords.set(word.toLowerCase(), {
-          text: word,
-          score: freq * this.getWordImportance(word),
-          type: this.categorizeKeyword(word)
-        });
-      }
-    }
-    
-    // Add keyphrases with higher scores
-    for (const phrase of keyphrases) {
-      const key = phrase.toLowerCase();
-      const score = (allKeywords.get(key)?.score || 0) + 5;
-      allKeywords.set(key, {
-        text: phrase,
-        score: score,
-        type: this.categorizeKeyword(phrase)
-      });
-    }
-    
-    // Add named entities with highest scores
-    for (const entity of namedEntities) {
-      const key = entity.toLowerCase();
-      const score = (allKeywords.get(key)?.score || 0) + 10;
-      allKeywords.set(key, {
-        text: entity,
-        score: score,
-        type: 'entity'
-      });
-    }
-    
-    // Return top keywords sorted by score
-    return Array.from(allKeywords.values())
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 50); // Limit to top 50 keywords
-  }
-
-  extractWords(text) {
-    return text
-      .toLowerCase()
-      .replace(/[^\w\s-]/g, ' ')
-      .split(/\s+/)
-      .filter(word => word.length > 2 && !this.stopWords.has(word));
-  }
-
-  calculateWordFrequency(words) {
-    const freq = new Map();
-    words.forEach(word => {
-      freq.set(word, (freq.get(word) || 0) + 1);
-    });
-    return freq;
+    return cleanWord.length >= 3 && 
+           cleanWord.length <= 35 && 
+           !this.stopWords.has(cleanWord.toLowerCase()) &&
+           !/^[\d\s\-_.,]+$/.test(cleanWord) && // Not just numbers/punctuation
+           /[a-zA-Z]/.test(cleanWord) && // Contains at least one letter
+           !/^(https?|www|com|org|net|edu|gov)$/i.test(cleanWord) && // Not common web terms
+           !/^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december)$/i.test(cleanWord); // Not months
   }
 
   extractKeyphrases(text) {
