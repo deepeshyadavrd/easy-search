@@ -150,6 +150,18 @@
       background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
     }
     
+    .business-color {
+      background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+    }
+    
+    .high-color {
+      background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+    }
+    
+    .medium-color {
+      background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+    }
+    
     .footer {
       text-align: center;
       margin-top: 15px;
@@ -176,12 +188,20 @@
   <div class="stats">
     <h3>📊 Current Page</h3>
     <div class="stat-item">
-      <span>Brand Links:</span>
+      <span>Brand/Entity Links:</span>
       <span class="stat-value" id="brandCount">-</span>
     </div>
     <div class="stat-item">
       <span>Tech Terms:</span>
       <span class="stat-value" id="techCount">-</span>
+    </div>
+    <div class="stat-item">
+      <span>Business Terms:</span>
+      <span class="stat-value" id="businessCount">-</span>
+    </div>
+    <div class="stat-item">
+      <span>Key Topics:</span>
+      <span class="stat-value" id="keywordCount">-</span>
     </div>
     <div class="stat-item">
       <span>Total Links:</span>
@@ -193,11 +213,23 @@
     <h3>🎨 Link Types</h3>
     <div class="legend-item">
       <div class="legend-color brand-color"></div>
-      <span>Brand names & companies</span>
+      <span>Brands & entities</span>
     </div>
     <div class="legend-item">
       <div class="legend-color tech-color"></div>
-      <span>Technical terms & tools</span>
+      <span>Technical terms</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-color business-color"></div>
+      <span>Business terms</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-color high-color"></div>
+      <span>Key topics (high relevance)</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-color medium-color"></div>
+      <span>Keywords (medium relevance)</span>
     </div>
   </div>
   
