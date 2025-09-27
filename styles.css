@@ -1,0 +1,113 @@
+/* Styles for smart links */
+.smart-link-wrapper {
+  cursor: pointer;
+  transition: all 0.2s ease;
+  padding: 1px 3px;
+  border-radius: 3px;
+  position: relative;
+  display: inline;
+}
+
+/* Brand name styling */
+.smart-link-brand {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: rgba(102, 126, 234, 0.4);
+  text-underline-offset: 2px;
+}
+
+.smart-link-brand:hover {
+  background-position: 100% 0;
+  text-decoration-color: rgba(102, 126, 234, 0.8);
+  transform: translateY(-1px);
+}
+
+/* Technical term styling */
+.smart-link-tech {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: rgba(240, 147, 251, 0.4);
+  text-underline-offset: 2px;
+}
+
+.smart-link-tech:hover {
+  background-position: 100% 0;
+  text-decoration-color: rgba(240, 147, 251, 0.8);
+  transform: translateY(-1px);
+}
+
+/* Fallback for browsers that don't support background-clip: text */
+@supports not (background-clip: text) or not (-webkit-background-clip: text) {
+  .smart-link-brand {
+    color: #667eea;
+    background: none;
+  }
+  
+  .smart-link-tech {
+    color: #f093fb;
+    background: none;
+  }
+}
+
+/* Tooltip effect */
+.smart-link-wrapper::before {
+  content: '🔍';
+  position: absolute;
+  top: -25px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  z-index: 1000;
+}
+
+.smart-link-wrapper:hover::before {
+  opacity: 1;
+}
+
+/* Animation for newly created links */
+@keyframes smartLinkAppear {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.smart-link-wrapper {
+  animation: smartLinkAppear 0.3s ease;
+}
+
+/* Ensure links don't break layout */
+.smart-link-wrapper {
+  word-break: keep-all;
+  white-space: nowrap;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .smart-link-wrapper::before {
+    background: rgba(255, 255, 255, 0.9);
+    color: black;
+  }
+}
