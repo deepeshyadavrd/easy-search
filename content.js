@@ -140,13 +140,13 @@ class SmartLinkCreator {
   constructor() {
     this.isEnabled = true;
     this.processedElements = new Set();
-    this.dynamicKeywords = new Map(); // Runtime keyword collection
+    this.dynamicKeywords = new Map();
     this.stopWords = new Set([
       'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from', 'has', 'he', 'in', 'is', 'it', 
       'its', 'of', 'on', 'that', 'the', 'to', 'was', 'will', 'with', 'would', 'you', 'your', 'this', 
       'they', 'we', 'can', 'had', 'her', 'his', 'she', 'or', 'but', 'not', 'what', 'all', 'any', 
       'been', 'their', 'said', 'each', 'which', 'do', 'how', 'if', 'up', 'out', 'many', 'then', 
-      'them', 'these', 'so', 'some', 'her', 'would', 'make', 'like', 'into', 'him', 'time', 'has',
+      'them', 'these', 'so', 'some', 'would', 'make', 'like', 'into', 'him', 'time', 'has',
       'two', 'more', 'very', 'when', 'come', 'may', 'get', 'use', 'man', 'new', 'now', 'old', 'see',
       'way', 'who', 'boy', 'did', 'number', 'no', 'could', 'people', 'my', 'than', 'first', 'been',
       'call', 'work', 'made', 'after', 'back', 'other', 'good', 'go', 'write', 'where', 'much', 'take',
@@ -155,17 +155,310 @@ class SmartLinkCreator {
       'same', 'never', 'most', 'must', 'might', 'going', 'still', 'another', 'does', 'without', 'every',
       'something', 'look', 'find', 'too', 'between', 'both', 'long', 'used', 'while', 'part', 'even'
     ]);
-    
-    // Base seed keywords to supplement dynamic detection
-    this.seedKeywords = new Set([
-      'api', 'sdk', 'saas', 'ai', 'ml', 'ux', 'ui', 'ceo', 'cto', 'startup', 'platform', 'framework',
-      'database', 'server', 'cloud', 'mobile', 'web', 'app', 'software', 'technology', 'digital'
-    ]);
 
     this.init();
   }
 
-  // Initialize with message handling and runtime updates
+  init() {
+    try {
+      chrome.storage.sync.get(['smartLinkEnabled'], (result) => {
+        this.isEnabled = result.smartLinkEnabled !== false;
+        if (this.isEnabled) {
+          setTimeout(() => {
+            this.processPage();
+            this.observeChanges();
+          }, 1000);
+        }
+      });
+
+      chrome.storage.onChanged.addListener((changes) => {
+        if (changes.smartLinkEnabled) {
+          this.isEnabled = changes.smartLinkEnabled.newValue;
+          if (this.isEnabled) {
+            this.processPage();
+          } else {
+            this.removeAllLinks();
+          }
+        }
+      });
+
+      chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+        try {
+          if (request.action === 'getStats') {
+            sendResponse(this.getCurrentStats());
+          } else if (request.action === 'toggleSmartLinks') {
+            this.isEnabled = request.enabled;
+            if (this.isEnabled) {
+              this.processPage();
+            } else {
+              this.removeAllLinks();
+            }
+          }
+        } catch (e) {
+          console.log('Message handling error:', e);
+        }
+        return true;
+      });
+    } catch (e) {
+      console.log('Extension context not available, running in basic mode');
+      this.isEnabled = true;
+      setTimeout(() => {
+        this.processPage();
+        this.observeChanges();
+      }, 1000);
+    }
+  }
+
+  processPage() {
+    console.log('🔍 Starting content analysis...');
+    
+    try {
+      this.buildDynamicKeywordLibrary();
+      const keywords = this.getTopKeywords();
+      
+      console.log(`📊 Found ${keywords.length} keywords:`, keywords.slice(0, 10).map(k => k.text));
+      
+      const selectors = ['p', 'div', 'span', 'li', 'td', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
+      
+      selectors.forEach(selector => {
+        const elements = document.querySelectorAll(selector);
+        Array.from(elements).forEach(element => {
+          if (!this.processedElements.has(element)) {
+            this.processElement(element, keywords);
+          }
+        });
+      });
+      
+      console.log('✅ Processing complete');
+    } catch (error) {
+      console.error('Error processing page:', error);
+    }
+  }
+
+  buildDynamicKeywordLibrary() {
+    this.dynamicKeywords.clear();
+    
+    // Analyze page title with high weight
+    const title = document.title || '';
+    if (title) {
+      this.extractKeywordsFromText(title, 10, 'title');
+    }
+    
+    // Analyze headings
+    const headings = document.querySelectorAll('h1, h2, h3, h4, h5, h6');
+    Array.from(headings).forEach((heading, index) => {
+      const weight = Math.max(8 - index, 3); // H1=8, H2=7, etc., min 3
+      this.extractKeywordsFromText(heading.textContent || '', weight, 'heading');
+    });
+    
+    // Analyze emphasized text
+    const emphasized = document.querySelectorAll('strong, b, em, mark');
+    Array.from(emphasized).forEach(el => {
+      this.extractKeywordsFromText(el.textContent || '', 3, 'emphasis');
+    });
+    
+    // Analyze image alt text
+    const images = document.querySelectorAll('img[alt]');
+    Array.from(images).forEach(img => {
+      this.extractKeywordsFromText(img.alt || '', 4, 'image');
+    });
+    
+    // Analyze main content for frequency
+    const mainContent = this.getMainContent();
+    if (mainContent) {
+      this.extractKeywordsFromText(mainContent, 1, 'content');
+    }
+    
+    console.log(`🏗️ Built library with ${this.dynamicKeywords.size} potential keywords`);
+  }
+
+  getMainContent() {
+    const selectors = ['article', 'main', '.content', '.post', '[role="main"]'];
+    
+    for (const selector of selectors) {
+      const element = document.querySelector(selector);
+      if (element) {
+        return element.textContent || '';
+      }
+    }
+    
+    return document.body.textContent || '';
+  }
+
+  extractKeywordsFromText(text, weight, source) {
+    if (!text || text.trim().length < 3) return;
+    
+    // Extract potential keywords using multiple patterns
+    const candidates = new Set();
+    
+    // 1. Capitalized words (brands, proper nouns)
+    const capitalizedWords = text.match(/\b[A-Z][a-zA-Z]{2,}(?:\s+[A-Z][a-zA-Z]{2,}){0,2}\b/g) || [];
+    capitalizedWords.forEach(word => candidates.add(word.trim()));
+    
+    // 2. Technical terms with special characters
+    const technicalTerms = text.match(/\b[a-zA-Z]+[._-][a-zA-Z]+(?:[._-][a-zA-Z]+)*\b/g) || [];
+    technicalTerms.forEach(term => candidates.add(term));
+    
+    // 3. Quoted terms
+    const quotedTerms = text.match(/"([^"]{3,25})"/g) || [];
+    quotedTerms.forEach(quoted => {
+      const clean = quoted.replace(/"/g, '');
+      if (clean.length >= 3) candidates.add(clean);
+    });
+    
+    // 4. Words in parentheses (often important terms/acronyms)
+    const parenthesisTerms = text.match(/\(([A-Z]{2,}|[A-Z][a-zA-Z]{2,})\)/g) || [];
+    parenthesisTerms.forEach(term => {
+      const clean = term.replace(/[()]/g, '');
+      if (clean.length >= 2) candidates.add(clean);
+    });
+    
+    // 5. For content analysis, also get frequent words
+    if (source === 'content') {
+      const words = text.toLowerCase().match(/\b[a-zA-Z]{4,}\b/g) || [];
+      const wordCount = new Map();
+      
+      words.forEach(word => {
+        if (!this.stopWords.has(word)) {
+          wordCount.set(word, (wordCount.get(word) || 0) + 1);
+        }
+      });
+      
+      // Add frequently occurring words
+      for (const [word, count] of wordCount.entries()) {
+        if (count >= 3) {
+          candidates.add(word);
+        }
+      }
+    }
+    
+    // Add candidates to dynamic keywords
+    candidates.forEach(candidate => {
+      if (this.isValidKeyword(candidate)) {
+        const key = candidate.toLowerCase();
+        const existing = this.dynamicKeywords.get(key) || {
+          text: candidate,
+          score: 0,
+          sources: new Set(),
+          frequency: 0
+        };
+        
+        existing.score += weight;
+        existing.frequency += 1;
+        existing.sources.add(source);
+        this.dynamicKeywords.set(key, existing);
+      }
+    });
+  }
+
+  isValidKeyword(word) {
+    if (!word || typeof word !== 'string') return false;
+    
+    const clean = word.trim();
+    return clean.length >= 3 && 
+           clean.length <= 30 && 
+           !this.stopWords.has(clean.toLowerCase()) &&
+           /[a-zA-Z]/.test(clean) &&
+           !/^[\d\s\-_.,]+$/.test(clean) &&
+           !/^(https?|www|com|org|net|edu|gov|html|css|js)$/i.test(clean);
+  }
+
+  getTopKeywords() {
+    const keywords = Array.from(this.dynamicKeywords.values())
+      .filter(k => k.score >= 3) // Minimum score threshold
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 50) // Limit to prevent overwhelming
+      .map(k => ({
+        text: k.text,
+        score: k.score,
+        type: this.categorizeKeyword(k)
+      }));
+    
+    return keywords;
+  }
+
+  categorizeKeyword(keyword) {
+    const text = keyword.text.toLowerCase();
+    const sources = Array.from(keyword.sources);
+    
+    // High importance for title/heading keywords
+    if (sources.includes('title') || sources.includes('heading')) {
+      return 'brand';
+    }
+    
+    // Technical terms
+    if (text.includes('.') || text.includes('-') || text.includes('_') ||
+        /(?:api|sdk|js|css|html|json|xml|sql|http|app|web|mobile|cloud|data|tech)/.test(text)) {
+      return 'tech';
+    }
+    
+    // Business terms  
+    if (/(?:service|platform|solution|business|company|startup|market|sales|revenue)/.test(text)) {
+      return 'business';
+    }
+    
+    // High score keywords
+    if (keyword.score >= 8) return 'high';
+    
+    return 'medium';
+  }
+
+  processElement(element, keywords) {
+    if (this.processedElements.has(element) || 
+        element.tagName === 'A' || 
+        element.tagName === 'SCRIPT' || 
+        element.tagName === 'STYLE' ||
+        element.classList.contains('smart-link-wrapper')) {
+      return;
+    }
+
+    const textNodes = this.getTextNodes(element);
+    
+    textNodes.forEach(textNode => {
+      const originalText = textNode.textContent;
+      if (!originalText || originalText.trim().length < 5) return;
+      
+      const replacements = this.findKeywordMatches(originalText, keywords);
+
+      if (replacements.length > 0) {
+        this.replaceTextWithLinks(textNode, replacements);
+      }
+    });
+
+    this.processedElements.add(element);
+  }
+
+  getTextNodes(element) {
+    const textNodes = [];
+    const walker = document.createTreeWalker(
+      element,
+      NodeFilter.SHOW_TEXT,
+      {
+        acceptNode: (node) => {
+          if (node.parentElement.tagName === 'A' || 
+              node.parentElement.classList.contains('smart-link-wrapper')) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          return node.textContent.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+        }
+      }
+    );
+
+    let node;
+    while (node = walker.nextNode()) {
+      textNodes.push(node);
+    }
+    return textNodes;
+  }
+
+  findKeywordMatches(text, keywords) {
+    const replacements = [];
+    
+    // Sort keywords by length (longest first) to avoid partial matches
+    const sortedKeywords = keywords.sort((a, b) => b.text.length - a.text.length);
+    
+    for (const keyword of sortedKeywords) {
+      const escapedKeyword = keyword.text.replace(/[.*+?^${}()|[\]\\]/g, '\\  // Initialize with message handling and runtime updates
   init() {
     // Load settings
     chrome.storage.sync.get(['smartLinkEnabled'], (result) => {
@@ -292,7 +585,195 @@ class SmartLinkCreator {
       // Ignore if extension context is not available
       console.log('Analytics tracking unavailable');
     }
+  }');
+      const regex = new RegExp(`\\b${escapedKeyword}\\b`, 'gi');
+      
+      let match;
+      while ((match = regex.exec(text)) !== null) {
+        const isOverlapping = replacements.some(existing => 
+          (match.index >= existing.start && match.index < existing.end) ||
+          (match.index + match[0].length > existing.start && match.index < existing.end)
+        );
+        
+        if (!isOverlapping) {
+          replacements.push({
+            start: match.index,
+            end: match.index + match[0].length,
+            text: match[0],
+            type: keyword.type,
+            score: keyword.score
+          });
+        }
+      }
+    }
+
+    return replacements.sort((a, b) => a.start - b.start);
   }
+
+  replaceTextWithLinks(textNode, replacements) {
+    const parent = textNode.parentNode;
+    const originalText = textNode.textContent;
+    let lastIndex = 0;
+    const fragment = document.createDocumentFragment();
+
+    replacements.forEach(replacement => {
+      if (replacement.start > lastIndex) {
+        const beforeText = originalText.substring(lastIndex, replacement.start);
+        fragment.appendChild(document.createTextNode(beforeText));
+      }
+
+      const link = this.createSmartLink(replacement.text, replacement.type, replacement.score);
+      fragment.appendChild(link);
+
+      lastIndex = replacement.end;
+    });
+
+    if (lastIndex < originalText.length) {
+      const afterText = originalText.substring(lastIndex);
+      fragment.appendChild(document.createTextNode(afterText));
+    }
+
+    parent.replaceChild(fragment, textNode);
+  }
+
+  createSmartLink(text, type, score = 1) {
+    const wrapper = document.createElement('span');
+    
+    let cssClass = 'smart-link-wrapper';
+    if (type === 'brand') {
+      cssClass += ' smart-link-brand';
+    } else if (type === 'tech') {
+      cssClass += ' smart-link-tech';  
+    } else if (type === 'business') {
+      cssClass += ' smart-link-business';
+    } else if (type === 'high') {
+      cssClass += ' smart-link-high';
+    } else {
+      cssClass += ' smart-link-medium';
+    }
+    
+    wrapper.className = cssClass;
+    wrapper.textContent = text;
+    wrapper.title = `Click to search: ${text}`;
+    wrapper.setAttribute('data-keyword', text);
+    wrapper.setAttribute('data-score', Math.round(score));
+    
+    wrapper.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(text)}`;
+      window.open(searchUrl, '_blank');
+      
+      this.trackKeywordClick(text, type, score);
+    });
+
+    return wrapper;
+  }
+
+  getCurrentStats() {
+    const brandCount = document.querySelectorAll('.smart-link-brand').length;
+    const techCount = document.querySelectorAll('.smart-link-tech').length;
+    const businessCount = document.querySelectorAll('.smart-link-business').length;
+    const highCount = document.querySelectorAll('.smart-link-high').length;
+    const mediumCount = document.querySelectorAll('.smart-link-medium').length;
+    
+    return {
+      brandCount,
+      techCount,
+      businessCount,
+      keywordCount: highCount + mediumCount,
+      totalCount: brandCount + techCount + businessCount + highCount + mediumCount,
+      dynamicKeywordsFound: this.dynamicKeywords.size
+    };
+  }
+
+  observeChanges() {
+    let reprocessTimeout;
+    const observer = new MutationObserver((mutations) => {
+      let shouldReprocess = false;
+      
+      mutations.forEach((mutation) => {
+        mutation.addedNodes.forEach((node) => {
+          if (node.nodeType === Node.ELEMENT_NODE && 
+              !node.classList.contains('smart-link-wrapper') &&
+              node.textContent && node.textContent.trim().length > 20) {
+            shouldReprocess = true;
+          }
+        });
+      });
+      
+      if (shouldReprocess) {
+        clearTimeout(reprocessTimeout);
+        reprocessTimeout = setTimeout(() => {
+          console.log('🔄 Content changed, reprocessing...');
+          this.processedElements.clear();
+          this.processPage();
+        }, 3000);
+      }
+    });
+
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+
+    this.mutationObserver = observer;
+  }
+
+  removeAllLinks() {
+    const smartLinks = document.querySelectorAll('.smart-link-wrapper');
+    smartLinks.forEach(link => {
+      const textNode = document.createTextNode(link.textContent);
+      link.parentNode.replaceChild(textNode, link);
+    });
+    this.processedElements.clear();
+    this.dynamicKeywords.clear();
+    
+    if (this.mutationObserver) {
+      this.mutationObserver.disconnect();
+    }
+  }
+
+  removeOverlaps(replacements) {
+    const clean = [];
+    let lastEnd = 0;
+
+    for (const replacement of replacements) {
+      if (replacement.start >= lastEnd) {
+        clean.push(replacement);
+        lastEnd = replacement.end;
+      }
+    }
+
+    return clean;
+  }
+
+  trackKeywordClick(keyword, type, score) {
+    try {
+      if (typeof chrome !== 'undefined' && chrome.runtime) {
+        chrome.runtime.sendMessage({
+          action: 'keywordClicked',
+          keyword: keyword,
+          type: type,
+          score: score,
+          url: window.location.href,
+          timestamp: Date.now()
+        });
+      }
+    } catch (e) {
+      console.log('Click tracking not available');
+    }
+  }
+}
+
+// Initialize when DOM is ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    new SmartLinkCreator();
+  });
+} else {
+  new SmartLinkCreator();
+}
 
   processPage() {
     console.log('🔍 Starting dynamic content analysis...');
