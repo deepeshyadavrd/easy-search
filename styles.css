@@ -46,6 +46,241 @@
   transform: translateY(-1px);
 }
 
+/* Business term styling */
+.smart-link-business {
+  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: rgba(79, 172, 254, 0.4);
+  text-underline-offset: 2px;
+}
+
+.smart-link-business:hover {
+  background-position: 100% 0;
+  text-decoration-color: rgba(79, 172, 254, 0.8);
+  transform: translateY(-1px);
+}
+
+/* High importance dynamic keywords */
+.smart-link-high {
+  background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: rgba(250, 112, 154, 0.5);
+  text-underline-offset: 2px;
+}
+
+.smart-link-high:hover {
+  background-position: 100% 0;
+  text-decoration-color: rgba(250, 112, 154, 0.9);
+  transform: translateY(-1px);
+}
+
+/* Medium importance dynamic keywords */
+.smart-link-medium {
+  background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  font-weight: 400;
+  text-decoration: underline;
+  text-decoration-color: rgba(168, 237, 234, 0.4);
+  text-underline-offset: 2px;
+}
+
+.smart-link-medium:hover {
+  background-position: 100% 0;
+  text-decoration-color: rgba(168, 237, 234, 0.7);
+  transform: translateY(-1px);
+}
+
+/* Fallback for browsers that don't support background-clip: text */
+@supports not (background-clip: text) or not (-webkit-background-clip: text) {
+  .smart-link-brand {
+    color: #667eea;
+    background: none;
+  }
+  
+  .smart-link-tech {
+    color: #f093fb;
+    background: none;
+  }
+  
+  .smart-link-business {
+    color: #4facfe;
+    background: none;
+  }
+  
+  .smart-link-high {
+    color: #fa709a;
+    background: none;
+  }
+  
+  .smart-link-medium {
+    color: #a8edea;
+    background: none;
+  }
+}
+
+/* Enhanced tooltip effect */
+.smart-link-wrapper::before {
+  content: '🔍 ' attr(data-keyword);
+  position: absolute;
+  top: -30px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.9);
+  color: white;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+  z-index: 1000;
+  max-width: 200px;
+}
+
+.smart-link-wrapper:hover::before {
+  opacity: 1;
+}
+
+/* Score indicator */
+.smart-link-wrapper::after {
+  content: attr(data-score);
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background: #ff6b6b;
+  color: white;
+  font-size: 9px;
+  padding: 2px 4px;
+  border-radius: 50%;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  z-index: 1001;
+  min-width: 12px;
+  text-align: center;
+}
+
+.smart-link-wrapper:hover::after {
+  opacity: 0.8;
+}
+
+/* Animation for newly created links */
+@keyframes smartLinkAppear {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.smart-link-wrapper {
+  animation: smartLinkAppear 0.4s ease;
+}
+
+/* Pulse effect for high-importance keywords */
+@keyframes keywordPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+.smart-link-high {
+  animation: smartLinkAppear 0.4s ease, keywordPulse 2s ease-in-out infinite 1s;
+}
+
+/* Ensure links don't break layout */
+.smart-link-wrapper {
+  word-break: keep-all;
+  white-space: nowrap;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .smart-link-wrapper::before {
+    background: rgba(255, 255, 255, 0.9);
+    color: black;
+  }
+  
+  .smart-link-wrapper::after {
+    background: #4ecdc4;
+  }
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .smart-link-wrapper::before {
+    font-size: 10px;
+    padding: 4px 6px;
+    max-width: 150px;
+  }
+  
+  .smart-link-wrapper::after {
+    font-size: 8px;
+    padding: 1px 3px;
+  }
+}/* Styles for smart links */
+.smart-link-wrapper {
+  cursor: pointer;
+  transition: all 0.2s ease;
+  padding: 1px 3px;
+  border-radius: 3px;
+  position: relative;
+  display: inline;
+}
+
+/* Brand name styling */
+.smart-link-brand {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: rgba(102, 126, 234, 0.4);
+  text-underline-offset: 2px;
+}
+
+.smart-link-brand:hover {
+  background-position: 100% 0;
+  text-decoration-color: rgba(102, 126, 234, 0.8);
+  transform: translateY(-1px);
+}
+
+/* Technical term styling */
+.smart-link-tech {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: rgba(240, 147, 251, 0.4);
+  text-underline-offset: 2px;
+}
+
+.smart-link-tech:hover {
+  background-position: 100% 0;
+  text-decoration-color: rgba(240, 147, 251, 0.8);
+  transform: translateY(-1px);
+}
+
 /* Fallback for browsers that don't support background-clip: text */
 @supports not (background-clip: text) or not (-webkit-background-clip: text) {
   .smart-link-brand {
